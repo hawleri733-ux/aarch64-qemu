@@ -1,1 +1,49 @@
+name: Build Android Emulator
 
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-22.04
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: emu-3.1-release
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            git \
+            python3 \
+            curl \
+            unzip \
+            zip \
+            build-essential \
+            libncurses5-dev \
+            lib32z1 \
+            lib32stdc++6
+
+      - name: Make rebuild script executable
+        run: chmod +x android/rebuild.sh
+
+      - name: Build
+        run: |
+          cd android
+          ./rebuild.sh
+
+      - name: Find APKs
+        run: |
+          find . -type f \( -name "*.apk" -o -name "*.aab" \) -print
+
+      - name: Upload APKs
+        uses: actions/upload-artifact@v4
+        with:
+          name: android-emulator-build
+          path: |
+            **/*.apk
+            **/*.aab
+          if-no-files-found: error
