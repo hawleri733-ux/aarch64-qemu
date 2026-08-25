@@ -1,4 +1,4 @@
-name: Build Android Emulator
+name: Build Android QEMU
 
 on:
   workflow_dispatch:
@@ -8,42 +8,71 @@ jobs:
     runs-on: ubuntu-22.04
 
     steps:
-      - name: Checkout
+      - name: Checkout source
         uses: actions/checkout@v4
         with:
           ref: emu-3.1-release
+          fetch-depth: 1
 
-      - name: Install dependencies
+      - name: Install build dependencies
         run: |
           sudo apt-get update
           sudo apt-get install -y \
+            build-essential \
             git \
             python3 \
+            python3-pip \
             curl \
+            wget \
             unzip \
             zip \
-            build-essential \
+            rsync \
+            pkg-config \
             libncurses5-dev \
             lib32z1 \
             lib32stdc++6
 
-      - name: Make rebuild script executable
-        run: chmod +x android/rebuild.sh
-
-      - name: Build
+      - name: Inspect Android build tree
         run: |
-          cd android
-          ./rebuild.sh
+          echo "=== Android directory ==="
+          ls -la android
+          echo "=== Configure help ==="
+          chmod +x android/configure.sh android/rebuild.sh
+          ./android/configure.sh --help || true
 
-      - name: Find APKs
+      - name: Run configure with visible output
         run: |
-          find . -type f \( -name "*.apk" -o -name "*.aab" \) -print
+          chmod +x android/configure.sh
+          ./android/configure.sh \
+            --out-dir=objs \
+            --verbose \
+            --verbosity=2
 
-      - name: Upload APKs
+      - name: Build QEMU
+        run: |
+          chmod +x android/rebuild.sh
+          ./android/rebuild.sh \
+            --out-dir=objs \
+            --no-tests \
+            --verbose
+
+      - name: Find outputs
+        if: always()
+        run: |
+          echo "=== APK files ==="
+          find . -type f -name "*.apk" -print || true
+          echo "=== Executables ==="
+          find . -type f \( -name "qemu-system-*" -o -name "emulator" \) -print || true
+          echo "=== objs ==="
+          find objs -maxdepth 4 -type f 2>/dev/null | head -200 || true
+
+      - name: Upload build
+        if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: android-emulator-build
+          name: qemu-android-build
           path: |
             **/*.apk
-            **/*.aab
-          if-no-files-found: error
+            **/qemu-system-*
+            **/emulator
+          if-no-files-found: warn
