@@ -1,22 +1,26 @@
-name: Build Android QEMU
+name: QEMU Android Build
 
 on:
   workflow_dispatch:
+  push:
+    branches:
+      - emu-3.1-release
 
 jobs:
   build:
     runs-on: ubuntu-22.04
 
     steps:
-      - name: Checkout source
+      - name: Checkout
         uses: actions/checkout@v4
         with:
           ref: emu-3.1-release
           fetch-depth: 1
 
-      - name: Install build dependencies
+      - name: Install dependencies
         run: |
           sudo apt-get update
+
           sudo apt-get install -y \
             build-essential \
             git \
@@ -30,43 +34,51 @@ jobs:
             pkg-config \
             libncurses5-dev \
             lib32z1 \
-            lib32stdc++6
+            lib32stdc++6 \
+            ninja-build \
+            cmake \
+            clang \
+            lld
 
-      - name: Inspect Android build tree
-        run: |
-          echo "=== Android directory ==="
-          ls -la android
-          echo "=== Configure help ==="
-          chmod +x android/configure.sh android/rebuild.sh
-          ./android/configure.sh --help || true
-
-      - name: Run configure with visible output
+      - name: Prepare build
         run: |
           chmod +x android/configure.sh
-          ./android/configure.sh \
-            --out-dir=objs \
-            --verbose \
-            --verbosity=2
-
-      - name: Build QEMU
-        run: |
           chmod +x android/rebuild.sh
+
+          mkdir -p "$GITHUB_WORKSPACE/objs"
+          mkdir -p "$GITHUB_WORKSPACE/prebuilts"
+
+      - name: Configure
+        run: |
+          ./android/configure.sh \
+            --out-dir="$GITHUB_WORKSPACE/objs" \
+            --aosp-prebuilts-dir="$GITHUB_WORKSPACE/prebuilts" \
+            --gles=dgl \
+            --verbose \
+            --verbosity=2 \
+            --no-tests
+
+      - name: Build
+        run: |
           ./android/rebuild.sh \
-            --out-dir=objs \
-            --no-tests \
-            --verbose
+            --out-dir="$GITHUB_WORKSPACE/objs" \
+            --no-tests
 
       - name: Find outputs
         if: always()
         run: |
-          echo "=== APK files ==="
+          echo "===== APK ====="
           find . -type f -name "*.apk" -print || true
-          echo "=== Executables ==="
-          find . -type f \( -name "qemu-system-*" -o -name "emulator" \) -print || true
-          echo "=== objs ==="
-          find objs -maxdepth 4 -type f 2>/dev/null | head -200 || true
 
-      - name: Upload build
+          echo "===== QEMU ====="
+          find . -type f \
+            \( -name "qemu-system-*" -o -name "emulator" \) \
+            -print || true
+
+          echo "===== OBJS ====="
+          find objs -maxdepth 5 -type f 2>/dev/null | head -200 || true
+
+      - name: Upload QEMU build
         if: always()
         uses: actions/upload-artifact@v4
         with:
@@ -75,4 +87,6 @@ jobs:
             **/*.apk
             **/qemu-system-*
             **/emulator
+            objs/**
           if-no-files-found: warn
+          compression-level: 6
